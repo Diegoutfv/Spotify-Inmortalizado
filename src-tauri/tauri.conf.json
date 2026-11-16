@@ -14,7 +14,8 @@
         "width": 480,
         "height": 720,
         "minWidth": 380,
-        "minHeight": 520
+        "minHeight": 520,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AudioServiceOutOfProcess"
       }
     ],
     "security": {

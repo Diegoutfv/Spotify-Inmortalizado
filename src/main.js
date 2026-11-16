@@ -452,6 +452,23 @@ let lastState = null;
 let seeking = false;
 let shuffleOn = false;
 
+// Teclas multimedia de Windows: siguiente / anterior.
+// (Play/Pausa ya las maneja Windows de forma nativa con el audio del reproductor.)
+async function setupMediaKeys() {
+  const gs = window.__TAURI__?.globalShortcut;
+  if (!gs) return;
+  const bind = async (key, action) => {
+    try {
+      if (await gs.isRegistered(key)) await gs.unregister(key);
+      await gs.register(key, (e) => { if (e.state === "Pressed") action(); });
+    } catch (err) {
+      console.warn(`No se pudo registrar ${key}:`, err);
+    }
+  };
+  await bind("MediaTrackNext", () => player?.nextTrack());
+  await bind("MediaTrackPrevious", () => player?.previousTrack());
+}
+
 function initPlayer() {
   window.onSpotifyWebPlaybackSDKReady = () => {
     player = new Spotify.Player({
@@ -468,6 +485,7 @@ function initPlayer() {
       player.addListener(ev, ({ message }) => setStatus(`${ev}: ${message}`, true));
     }
     player.connect();
+    setupMediaKeys();
   };
   const s = document.createElement("script");
   s.src = "https://sdk.scdn.co/spotify-player.js";
