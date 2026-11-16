@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotify Inmortalizado</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="login" hidden>
+    <h1>Spotify Inmortalizado</h1>
+    <p>Reproductor ligero para <strong>Spotify Premium</strong>. Cada persona usa su propia app de Spotify (gratis, 2 minutos):</p>
+    <ol class="steps">
+      <li>Abre el <a href="#" id="openDash">Dashboard de Spotify for Developers</a> y pulsa <em>Create app</em>.</li>
+      <li>Marca <strong>Web API</strong> y <strong>Web Playback SDK</strong>.</li>
+      <li>En <em>Redirect URIs</em> añade exactamente:<br><code id="redirectUri">http://127.0.0.1:8888/callback</code> <button id="copyUri" class="textbtn" type="button">Copiar</button></li>
+      <li>Guarda, entra a <em>Settings</em>, copia el <strong>Client ID</strong> y pégalo aquí:</li>
+    </ol>
+    <input id="clientId" placeholder="Client ID" autocomplete="off" spellcheck="false">
+    <button id="loginBtn">Iniciar sesión con Spotify</button>
+    <p id="loginMsg" class="msg"></p>
+    <p class="fine">No afiliado a Spotify AB. Requiere cuenta Premium. Tu Client ID y tus tokens se guardan solo en tu equipo.</p>
+  </section>
+
+  <section id="app" hidden>
+    <header>
+      <nav id="tabs">
+        <button data-tab="playlists" class="active">Playlists</button>
+        <button data-tab="library">Me gusta</button>
+        <button data-tab="search">Buscar</button>
+      </nav>
+      <button id="logout" title="Cerrar sesión">⎋</button>
+    </header>
+    <p id="status" class="msg"></p>
+
+    <div id="view-search" class="view" hidden>
+      <form id="searchForm">
+        <input id="q" type="search" placeholder="Buscar canciones o artistas…" autocomplete="off">
+      </form>
+      <ul id="results"></ul>
+      <button id="more" class="textbtn" hidden>Cargar más</button>
+    </div>
+
+    <div id="view-playlists" class="view">
+      <form id="newPlForm">
+        <input id="newPl" type="text" placeholder="Nueva playlist…" autocomplete="off">
+        <button type="submit" title="Crear playlist">＋</button>
+      </form>
+      <ul id="playlists"></ul>
+    </div>
+
+    <div id="view-playlist" class="view" hidden>
+      <button id="back" class="textbtn">← Volver</button>
+      <h2 id="plTitle"></h2>
+      <div class="plActions">
+        <button id="plPlay" class="pill">▶ Reproducir</button>
+        <button id="plShuffle" class="pill">Aleatorio</button>
+      </div>
+      <ul id="plTracks"></ul>
+    </div>
+
+    <div id="view-library" class="view" hidden>
+      <ul id="libTracks"></ul>
+    </div>
+  </section>
+
+  <div id="picker" hidden>
+    <div class="card">
+      <h3>Añadir a playlist</h3>
+      <ul id="pickerList"></ul>
+      <button id="pickerClose" class="textbtn">Cancelar</button>
+    </div>
+  </div>
+
+  <footer id="player" hidden>
+    <div class="now">
+      <img id="cover" alt="">
+      <div class="meta">
+        <strong id="title">Nada reproduciéndose</strong>
+        <span id="artist"></span>
+      </div>
+      <button id="like" aria-label="Me gusta" title="Me gusta">♡</button>
+    </div>
+    <div class="controls">
+      <button id="shuffle" aria-label="Aleatorio" title="Aleatorio">🔀</button>
+      <button id="prev" aria-label="Anterior">⏮</button>
+      <button id="toggle" aria-label="Play/Pausa">▶</button>
+      <button id="next" aria-label="Siguiente">⏭</button>
+      <button id="repeat" aria-label="Repetir" title="Repetir">🔁</button>
+      <input id="vol" type="range" min="0" max="100" value="50" aria-label="Volumen">
+    </div>
+    <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Progreso">
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
