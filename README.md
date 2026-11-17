@@ -11,6 +11,9 @@ Reproductor de escritorio **ligero** para Spotify Premium, hecho con [Tauri](htt
 - Búsqueda de canciones
 - Crear playlists y añadir canciones
 - Controles: play/pausa, anterior/siguiente, aleatorio, repetir, volumen y progreso
+- Playlists fijadas al inicio y navegación con los botones laterales del mouse
+- Teclas multimedia (siguiente/anterior) que funcionan incluso con un juego en primer plano, y panel multimedia de Windows con canción y portada
+- Aviso cuando hay una versión nueva publicada en GitHub
 - Inicio de sesión seguro con OAuth **PKCE** (sin backend ni secretos)
 
 ## Requisitos

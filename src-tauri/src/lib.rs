@@ -53,12 +53,41 @@ async fn wait_for_callback(port: u16) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[cfg(windows)]
+mod media_hook;
+#[cfg(windows)]
+mod smtc;
+
+/// El frontend informa de la canción actual para mostrarla en el panel multimedia de Windows.
+#[tauri::command]
+fn media_update(title: String, artist: String, album: String, cover: String, playing: bool) {
+    #[cfg(windows)]
+    smtc::send(smtc::Update { title, artist, album, cover, playing });
+    #[cfg(not(windows))]
+    let _ = (title, artist, album, cover, playing);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![wait_for_callback])
+        .setup(|app| {
+            #[cfg(windows)]
+            {
+                use tauri::Manager;
+                media_hook::start(app.handle().clone());
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Ok(hwnd) = window.hwnd() {
+                        smtc::start(app.handle().clone(), hwnd.0 as isize);
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = app;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![wait_for_callback, media_update])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

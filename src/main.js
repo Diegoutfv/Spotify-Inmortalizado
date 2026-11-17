@@ -335,6 +335,7 @@ async function loadPlaylists() {
   try {
     myPlaylists = await fetchAll("/me/playlists?limit=50");
     myPlaylists = myPlaylists.filter(Boolean);
+    if (!me) me = await api("/me").catch(() => null);
     renderPlaylists();
     setStatus(myPlaylists.length ? "" : "No tienes playlists todavía");
   } catch (e) {
@@ -364,12 +365,23 @@ function sectionTitle(text) {
   return li;
 }
 
+// Spotify (modo desarrollo) solo deja leer las canciones de playlists propias o colaborativas.
+function canListItems(p) {
+  return !me || p.owner?.id === me.id || !!p.collaborative;
+}
+
+const NO_LIST_MSG = "Spotify no permite a esta app ver las canciones de playlists de otras personas. Puedes reproducirla igualmente con los botones de arriba.";
+
 function playlistRow(p, pinned) {
   const total = (p.items || p.tracks)?.total;
   return makeRow({
     img: p.images?.[0]?.url,
     title: p.name,
-    subtitle: [p.owner?.display_name, total != null ? `${total} canciones` : ""].filter(Boolean).join(" · "),
+    subtitle: [
+      p.owner?.display_name,
+      total != null ? `${total} canciones` : "",
+      canListItems(p) ? "" : "solo reproducir",
+    ].filter(Boolean).join(" · "),
     onClick: () => openPlaylist(p),
     action: {
       html: ICON.pin,
@@ -402,12 +414,11 @@ async function openPlaylist(p, fromHistory = false) {
   openPl = { uri: p.uri };
   $("plTitle").textContent = p.name;
   $("plTracks").textContent = "";
+  if (!canListItems(p)) return setStatus(NO_LIST_MSG);
   setStatus("Cargando canciones…");
   try {
     const data = await api(`/playlists/${p.id}/items?limit=50`);
-    if (!data?.items) {
-      return setStatus("Spotify solo permite ver el contenido de playlists propias o colaborativas.", true);
-    }
+    if (!data?.items) return setStatus(NO_LIST_MSG);
     let entries = data.items;
     if (data.next) entries = entries.concat(await fetchAll(data.next, 100));
     const list = entries.map(trackOf).filter(Boolean);
@@ -417,7 +428,8 @@ async function openPlaylist(p, fromHistory = false) {
       ? (skipped ? `${skipped} elementos no mostrados (archivos locales o podcasts)` : "")
       : "Playlist vacía");
   } catch (e) {
-    setStatus(e.message, true);
+    if (/forbidden|\b403\b/i.test(e.message)) setStatus(NO_LIST_MSG);
+    else setStatus(e.message, true);
   }
 }
 
@@ -520,7 +532,38 @@ let shuffleOn = false;
 
 // Teclas multimedia de Windows: siguiente / anterior.
 // (Play/Pausa ya las maneja Windows de forma nativa con el audio del reproductor.)
+// Evita que una misma pulsación (recibida por dos vías) cambie dos canciones.
+const lastMediaAction = {};
+function mediaAction(name, fn) {
+  const now = Date.now();
+  if (now - (lastMediaAction[name] || 0) < 300) return;
+  lastMediaAction[name] = now;
+  fn();
+}
+
+// Controles multimedia del sistema de Windows (los mismos que usan los reproductores normales).
+// Funcionan también con juegos en primer plano, a diferencia de los atajos globales.
+function setupMediaSession() {
+  const ms = navigator.mediaSession;
+  if (!ms) return;
+  const set = (action, fn) => { try { ms.setActionHandler(action, fn); } catch {} };
+  set("nexttrack", () => mediaAction("next", () => player?.nextTrack()));
+  set("previoustrack", () => mediaAction("prev", () => player?.previousTrack()));
+}
+
 async function setupMediaKeys() {
+  setupMediaSession();
+  // Gancho de teclado del sistema (Rust): funciona aunque un juego tenga el foco.
+  try {
+    await window.__TAURI__.event.listen("media-key", (e) => {
+      if (e.payload === "next") mediaAction("next", () => player?.nextTrack());
+      else if (e.payload === "prev") mediaAction("prev", () => player?.previousTrack());
+      else if (e.payload === "play") player?.resume();
+      else if (e.payload === "pause") player?.pause();
+    });
+  } catch (err) {
+    console.warn("No se pudo escuchar media-key:", err);
+  }
   const gs = window.__TAURI__?.globalShortcut;
   if (!gs) return;
   const bind = async (key, action) => {
@@ -531,8 +574,8 @@ async function setupMediaKeys() {
       console.warn(`No se pudo registrar ${key}:`, err);
     }
   };
-  await bind("MediaTrackNext", () => player?.nextTrack());
-  await bind("MediaTrackPrevious", () => player?.previousTrack());
+  await bind("MediaTrackNext", () => mediaAction("next", () => player?.nextTrack()));
+  await bind("MediaTrackPrevious", () => mediaAction("prev", () => player?.previousTrack()));
 }
 
 function initPlayer() {
@@ -566,6 +609,25 @@ function renderState(state) {
   $("artist").textContent = t.artists.map((a) => a.name).join(", ");
   $("cover").src = t.album.images[0]?.url || "";
   $("toggle").innerHTML = state.paused ? ICON.play : ICON.pause;
+  // Estado de reproducción para el panel multimedia de Windows (título, artista, portada, progreso).
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.playbackState = state.paused ? "paused" : "playing";
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: state.duration / 1000,
+        position: Math.min(state.position, state.duration) / 1000,
+        playbackRate: 1,
+      });
+    } catch {}
+  }
+  // Panel multimedia nativo de Windows (SMTC, desde Rust): canción, artista y portada.
+  window.__TAURI__.core.invoke("media_update", {
+    title: t.name,
+    artist: t.artists.map((a) => a.name).join(", "),
+    album: t.album?.name || "",
+    cover: t.album?.images?.[0]?.url || "",
+    playing: !state.paused,
+  }).catch(() => {});
   shuffleOn = state.shuffle;
   $("shuffle").classList.toggle("on", state.shuffle);
   $("repeat").classList.toggle("on", state.repeat_mode > 0);
@@ -574,6 +636,14 @@ function renderState(state) {
     currentUri = t.uri;
     setLiked(false);
     refreshLiked(t.uri);
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.name,
+        artist: t.artists.map((a) => a.name).join(", "),
+        album: t.album?.name || "",
+        artwork: (t.album?.images || []).slice(0, 1).map((i) => ({ src: i.url, sizes: "300x300" })),
+      });
+    }
   }
 }
 
