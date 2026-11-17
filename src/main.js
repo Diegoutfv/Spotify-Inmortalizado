@@ -39,6 +39,7 @@ const ICON = {
   heart: svg("M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"),
   heartFill: svg("M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"),
   logout: svg("M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"),
+  pin: svg("M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"),
 };
 
 function setFill(el) {
@@ -202,8 +203,9 @@ function makeRow({ img, title, subtitle, onClick, action }) {
   li.append(im, meta);
   if (action) {
     const b = document.createElement("button");
-    b.textContent = action.label;
+    if (action.html) b.innerHTML = action.html; else b.textContent = action.label;
     b.title = action.title;
+    if (action.cls) b.className = action.cls;
     b.addEventListener("click", (e) => { e.stopPropagation(); action.run(); });
     li.append(b);
   }
@@ -312,21 +314,63 @@ async function loadPlaylists() {
   try {
     myPlaylists = await fetchAll("/me/playlists?limit=50");
     myPlaylists = myPlaylists.filter(Boolean);
-    const ul = $("playlists");
-    ul.textContent = "";
-    myPlaylists.forEach((p) => {
-      const total = (p.items || p.tracks)?.total;
-      ul.append(makeRow({
-        img: p.images?.[0]?.url,
-        title: p.name,
-        subtitle: [p.owner?.display_name, total != null ? `${total} canciones` : ""].filter(Boolean).join(" · "),
-        onClick: () => openPlaylist(p),
-      }));
-    });
+    renderPlaylists();
     setStatus(myPlaylists.length ? "" : "No tienes playlists todavía");
   } catch (e) {
     setStatus(e.message, true);
   }
+}
+
+/* Playlists fijadas al inicio (se guardan en el equipo, en el orden en que las fijas) */
+const PIN_KEY = "pinned_playlists";
+
+function getPins() {
+  try { return JSON.parse(ls.get(PIN_KEY) || "[]"); } catch { return []; }
+}
+
+function togglePin(id) {
+  const pins = getPins();
+  const i = pins.indexOf(id);
+  if (i >= 0) pins.splice(i, 1); else pins.push(id);
+  ls.set(PIN_KEY, JSON.stringify(pins));
+  renderPlaylists();
+}
+
+function sectionTitle(text) {
+  const li = document.createElement("li");
+  li.className = "section-title";
+  li.textContent = text;
+  return li;
+}
+
+function playlistRow(p, pinned) {
+  const total = (p.items || p.tracks)?.total;
+  return makeRow({
+    img: p.images?.[0]?.url,
+    title: p.name,
+    subtitle: [p.owner?.display_name, total != null ? `${total} canciones` : ""].filter(Boolean).join(" · "),
+    onClick: () => openPlaylist(p),
+    action: {
+      html: ICON.pin,
+      title: pinned ? "Quitar de fijadas" : "Fijar al inicio",
+      cls: "pin" + (pinned ? " on" : ""),
+      run: () => togglePin(p.id),
+    },
+  });
+}
+
+function renderPlaylists() {
+  const ul = $("playlists");
+  ul.textContent = "";
+  const pins = getPins();
+  const pinned = pins.map((id) => myPlaylists.find((p) => p.id === id)).filter(Boolean);
+  const rest = myPlaylists.filter((p) => !pins.includes(p.id));
+  if (pinned.length) {
+    ul.append(sectionTitle("Fijadas"));
+    pinned.forEach((p) => ul.append(playlistRow(p, true)));
+    if (rest.length) ul.append(sectionTitle("Todas"));
+  }
+  rest.forEach((p) => ul.append(playlistRow(p, false)));
 }
 
 let openPl = null; // { uri }
