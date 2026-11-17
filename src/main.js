@@ -275,7 +275,28 @@ function showView(name) {
   setStatus("");
 }
 
-function selectTab(name) {
+/* Historial de navegación (botones atrás/adelante del mouse) */
+const navStack = [];
+let navIdx = -1;
+
+function navPush(entry) {
+  navStack.splice(navIdx + 1);
+  navStack.push(entry);
+  navIdx = navStack.length - 1;
+}
+
+function navGo(delta) {
+  if (!$("picker").hidden) return;
+  const i = navIdx + delta;
+  if (i < 0 || i >= navStack.length) return;
+  navIdx = i;
+  const e = navStack[i];
+  if (e.playlist) openPlaylist(e.playlist, true);
+  else selectTab(e.tab, true);
+}
+
+function selectTab(name, fromHistory = false) {
+  if (!fromHistory) navPush({ tab: name });
   showView(name);
   if (name === "playlists") loadPlaylists();
   if (name === "library") loadLibrary();
@@ -375,7 +396,8 @@ function renderPlaylists() {
 
 let openPl = null; // { uri }
 
-async function openPlaylist(p) {
+async function openPlaylist(p, fromHistory = false) {
+  if (!fromHistory) navPush({ playlist: p });
   showView("playlist");
   openPl = { uri: p.uri };
   $("plTitle").textContent = p.name;
@@ -562,6 +584,51 @@ setInterval(() => {
   setFill($("seek"));
 }, 500);
 
+/* ---------- Aviso de nueva versión ---------- */
+
+// Se consulta el último release publicado en GitHub y, si es más nuevo que esta versión,
+// se muestra un aviso con un enlace para descargarlo. No instala nada por sí solo.
+// Si haces un fork, cambia estas dos URL por las de tu repositorio.
+const UPDATE_API = "https://api.github.com/repos/Diegoutfv/Spotify-Inmortalizado/releases/latest";
+const RELEASES_PAGE = "https://github.com/Diegoutfv/Spotify-Inmortalizado/releases/latest";
+const UPDATE_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+
+function parseVer(v) {
+  return String(v).replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+}
+
+function isNewer(a, b) {
+  const x = parseVer(a);
+  const y = parseVer(b);
+  for (let i = 0; i < 3; i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  }
+  return false;
+}
+
+async function checkForUpdate() {
+  try {
+    const current = await window.__TAURI__.app.getVersion();
+    let latest = null;
+    const cached = JSON.parse(ls.get("update_cache") || "null");
+    if (cached && Date.now() - cached.at < UPDATE_CHECK_EVERY_MS) {
+      latest = cached.tag;
+    } else {
+      const res = await fetch(UPDATE_API, { headers: { Accept: "application/vnd.github+json" } });
+      if (!res.ok) return;
+      latest = (await res.json()).tag_name;
+      ls.set("update_cache", JSON.stringify({ tag: latest, at: Date.now() }));
+    }
+    if (!latest || !isNewer(latest, current) || ls.get("update_dismissed") === latest) return;
+    $("updateText").textContent = `Hay una nueva versión: ${latest} (tienes ${current})`;
+    $("updateBar").hidden = false;
+    $("updateGo").onclick = () => openUrl(RELEASES_PAGE);
+    $("updateClose").onclick = () => { ls.set("update_dismissed", latest); $("updateBar").hidden = true; };
+  } catch {
+    // Sin conexión o límite de GitHub: se ignora en silencio.
+  }
+}
+
 /* ---------- Arranque ---------- */
 
 function startApp() {
@@ -570,12 +637,13 @@ function startApp() {
   $("player").hidden = false;
   initPlayer();
   selectTab("playlists");
+  checkForUpdate();
 }
 
 $("loginBtn").addEventListener("click", login);
 $("logout").addEventListener("click", logout);
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => selectTab(b.dataset.tab)));
-$("back").addEventListener("click", () => selectTab("playlists"));
+$("back").addEventListener("click", () => navGo(-1));
 $("searchForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const q = $("q").value.trim();
@@ -630,6 +698,15 @@ if (ls.get("refresh_token") && ls.get("scopes") === SCOPES) {
     setLoginMsg("Se añadieron permisos nuevos (playlists y biblioteca): vuelve a iniciar sesión.");
   }
   $("login").hidden = false;
+}
+
+// Botones laterales del mouse: 4.º = atrás, 5.º = adelante (e.button 3 y 4).
+for (const type of ["mousedown", "mouseup"]) {
+  window.addEventListener(type, (e) => {
+    if (e.button !== 3 && e.button !== 4) return;
+    e.preventDefault();
+    if (type === "mouseup") navGo(e.button === 3 ? -1 : 1);
+  });
 }
 
 // Guía de bienvenida: abrir dashboard y copiar el Redirect URI
